@@ -2,7 +2,6 @@ import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as github from '@actions/github'
 import stripAnsi from 'strip-ansi'
-import fs from 'fs'
 
 function format(output: string): string {
   const ret = ['**The container image has inefficient files.**']
@@ -30,7 +29,7 @@ function format(output: string): string {
       ret.push(stripAnsi(line))
     } else if (inefficientFilesSection) {
       if (line.startsWith('Count')) {
-        ret.push('| Count | Wasted Space | File Paht |')
+        ret.push('| Count | Wasted Space | File Path |')
         ret.push('|---|---|---|')
       } else {
         // https://github.com/wagoodman/dive/blob/master/runtime/ci/evaluator.go#L140
@@ -45,15 +44,17 @@ function format(output: string): string {
 
 async function run(): Promise<void> {
   try {
+    const engine = core.getInput('engine')
     const image = core.getInput('image')
-    const configFile = core.getInput('config-file')
+    const minEfficiency = core.getInput('min-image-efficiency')
+    const maxWastedRatio = core.getInput('max-wasted-ratio')
+    const maxWastedBytes = core.getInput('max-wasted-bytes')
+    const diveVersion = core.getInput('dive-version')
+    const diveImage = `wagoodman/dive:${diveVersion}`
 
-    const diveImage = 'wagoodman/dive:v0.9'
     await exec.exec('docker', ['pull', diveImage])
 
     const commandOptions = [
-      '-e',
-      'CI=true',
       '-e',
       'DOCKER_API_VERSION=1.37',
       '--rm',
@@ -61,16 +62,28 @@ async function run(): Promise<void> {
       '/var/run/docker.sock:/var/run/docker.sock'
     ]
 
-    if (fs.existsSync(configFile)) {
-      commandOptions.push(
-        '--mount',
-        `type=bind,source=${configFile},target=/.dive-ci`,
-        '--ci-config',
-        '/.dive-ci'
-      )
+    const parameters = [
+      'run',
+      ...commandOptions,
+      diveImage,
+      image,
+      '--ci',
+      '--source',
+      engine
+    ]
+
+    if (minEfficiency) {
+      parameters.push('--lowestEfficiency', minEfficiency)
     }
 
-    const parameters = ['run', ...commandOptions, diveImage, image]
+    if (maxWastedRatio) {
+      parameters.push('--highestUserWastedPercent', maxWastedRatio)
+    }
+
+    if (maxWastedBytes) {
+      parameters.push('--highestWastedBytes', maxWastedBytes)
+    }
+
     let output = ''
     const execOptions = {
       ignoreReturnCode: true,
@@ -83,6 +96,7 @@ async function run(): Promise<void> {
         }
       }
     }
+
     const exitCode = await exec.exec('docker', parameters, execOptions)
     if (exitCode === 0) {
       // success
@@ -93,16 +107,18 @@ async function run(): Promise<void> {
     if (!token) {
       return
     }
+
     const octokit = github.getOctokit(token)
     const comment = {
       ...github.context.issue,
       issue_number: github.context.issue.number,
       body: format(output)
     }
+
     await octokit.issues.createComment(comment)
     core.setFailed(`Scan failed (exit code: ${exitCode})`)
   } catch (error) {
-    core.setFailed(error)
+    core.setFailed(`Unhandled Error: ${error}`)
   }
 }
 

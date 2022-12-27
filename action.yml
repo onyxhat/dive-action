@@ -1,17 +1,30 @@
 name: "Dive Action"
 description: "Run Dive to analyze the container image efficiency"
-author: "@yuichielectric"
+author: "@onyxhat"
 branding:
   icon: "aperture"
   color: "green"
 inputs:
+  engine:
+    description: "Define the container image engine/source Dive uses when fetching and analyzing the image (e.g. docker, docker-archive, podman)"
+    required: true
+    default: docker
+  dive-version:
+    description: "Version of dive to be used for analysis. Defaults to latest tested with this action."
+    required: true
+    default: "v0.10"
   image:
     description: "Image to analyze"
     required: true
-  config-file:
-    description: "Path to dive config file"
+  min-image-efficiency:
+    description: "Threshold for the lowest allowed image efficiency ratio between 0-1"
     required: false
-    default: ${{ github.workspace }}/.dive.yaml
+  max-wasted-ratio:
+    description: "Threshold for the maximum allowed ratio wasted bytes as a function of total image size expressed as a ratio between 0-1"
+    required: false
+  max-wasted-bytes:
+    description: "Threshold for the maximum allowed bytes wasted expressed in B, KB, MB and GB"
+    required: false
   github-token:
     description: "GitHub Token to post PR comment"
     required: true
